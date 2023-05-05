@@ -796,13 +796,17 @@ var StringToExtendedErrorCode = reverseInt16(ExtendedErrorCodeToString)
 type EDNS0_EDE struct {
 	InfoCode  uint16
 	ExtraText string
+	Empty     bool // Empty is used to signal an empty EDE option in a backwards compatible way, it's not used on the wire.
 }
 
 // Option implements the EDNS0 interface.
 func (e *EDNS0_EDE) Option() uint16 { return EDNS0EDE }
-func (e *EDNS0_EDE) copy() EDNS0    { return &EDNS0_EDE{e.InfoCode, e.ExtraText} }
+func (e *EDNS0_EDE) copy() EDNS0    { return &EDNS0_EDE{e.InfoCode, e.ExtraText, e.Empty} }
 
 func (e *EDNS0_EDE) String() string {
+	if e.Empty {
+		return ""
+	}
 	info := strconv.FormatUint(uint64(e.InfoCode), 10)
 	if s, ok := ExtendedErrorCodeToString[e.InfoCode]; ok {
 		info += fmt.Sprintf(" (%s)", s)
@@ -811,6 +815,10 @@ func (e *EDNS0_EDE) String() string {
 }
 
 func (e *EDNS0_EDE) pack() ([]byte, error) {
+	if e.Empty {
+		// experimental support of empty EDE option
+		return []byte{}, nil
+	}
 	b := make([]byte, 2+len(e.ExtraText))
 	binary.BigEndian.PutUint16(b[0:], e.InfoCode)
 	copy(b[2:], e.ExtraText)
@@ -818,11 +826,16 @@ func (e *EDNS0_EDE) pack() ([]byte, error) {
 }
 
 func (e *EDNS0_EDE) unpack(b []byte) error {
+	if len(b) == 0 {
+		e.Empty = true
+		return nil
+	}
 	if len(b) < 2 {
 		return ErrBuf
 	}
 	e.InfoCode = binary.BigEndian.Uint16(b[0:])
 	e.ExtraText = string(b[2:])
+	e.Empty = false
 	return nil
 }
 
